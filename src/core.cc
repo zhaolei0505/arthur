@@ -35,6 +35,13 @@ extern "C" {
 
 // the function is only for compile asm code.
 #define __used__ __attribute__((used))
+
+#ifdef __aarch64__
+static __used__ void inject_fork(void) 
+{
+    // TBD: support aarch64
+}
+#else
 static __used__ void inject_fork(void) 
 {
     /* asm code for fork injection.
@@ -54,7 +61,8 @@ static __used__ void inject_fork(void)
     "inject_end: \n"
    );
 }
-};
+#endif
+}; // extern 'C'
 
 namespace arthur {
 
@@ -171,7 +179,12 @@ int pt_detach(pid_t pid)
 int pt_getregs(pid_t pid, user_regs64_struct *pregs)
 {
     int rc;
+#ifdef __aarch64__
+    rc = ptrace(PTRACE_GETREGSET, pid, NULL, pregs);
+#else
     rc = ptrace(PTRACE_GETREGS, pid, NULL, pregs);
+#endif
+
     assert(rc == 0);
 
 #if DEBUG 
@@ -198,7 +211,11 @@ int pt_call(pid_t pid, user_regs64_struct *oregs, uint64_t func, int argc, uint6
     user_regs64_struct regs;
     assert(argc <= 6);
 
+#ifdef __aarch64__
+    rc = ptrace(PTRACE_GETREGSET, pid, NULL, &regs);
+#else
     rc = ptrace(PTRACE_GETREGS, pid, NULL, &regs);
+#endif
     assert(rc == 0);
 
     // simulate call instruction
@@ -233,8 +250,12 @@ int pt_call(pid_t pid, user_regs64_struct *oregs, uint64_t func, int argc, uint6
                assert(0); 
         }
     }
-   
+  
+#ifdef __aarch64__ 
+    rc = ptrace(PTRACE_SETREGSET, pid, NULL, &regs);
+#else
     rc = ptrace(PTRACE_SETREGS, pid, NULL, &regs);
+#endif
     assert(rc == 0);
 
     // wait for a SIGSEGV
@@ -267,7 +288,13 @@ int pt_call(pid_t pid, user_regs64_struct *oregs, uint64_t func, int argc, uint6
 int pt_setregs(pid_t pid, user_regs64_struct *pregs)
 {
     int rc;
+
+#ifdef __aarch64__
+    rc = ptrace(PTRACE_SETREGSET, pid, NULL, pregs);
+#else
     rc = ptrace(PTRACE_SETREGS, pid, NULL, pregs);
+#endif
+
     assert(rc == 0);
     return rc;
 }
@@ -642,12 +669,21 @@ int Coredump::WriteThreadMeta(Lz4Stream& out, pid_t pid, bool is_main) {
     out.Write((const char*)&pid, sizeof(i._pid));
 
     // get Grnerate Registers
+#ifdef __aarch64__
+    rc = ptrace(PTRACE_GETREGSET, pid, 0, buf);
+#else
     rc = ptrace(PTRACE_GETREGS, pid, 0, buf);
+#endif    
     assert(rc == 0);
     out.Write(buf, sizeof(i._regs));
 
     // get FP Registers 
+#ifdef __aarch64__
+    // TBD: ARM64 uses r14 for link register
+    //rc = ptrace(PTRACE_GETFPREGSET, pid, 0, buf);
+#else
     rc = ptrace(PTRACE_GETFPREGS, pid, 0, buf);
+#endif
     assert(rc == 0);
     out.Write(buf, sizeof(i._fpregs));
 
@@ -1156,10 +1192,14 @@ int Coredump::forkcore(const char *corefile, bool sys_core)
     // inject fork
     {
         char *inject_begin=0, *inject_end=0; 
+#ifdef __aarch64__
+
+#else        
         asm ("mov $inject_begin, %0 \n"
              : "=r" (inject_begin));
         asm ("mov $inject_end, %0 \n"
              : "=r" (inject_end));
+#endif        
         int inject_size = (inject_end - inject_begin);
         dprint("inject_range(%p - %p), size(%d)", inject_begin, inject_end, inject_size);
      
@@ -1311,10 +1351,14 @@ int Coredump::forkcore_m(const char *corefile, bool sys_core)
     // inject fork
     {
         char *inject_begin=0, *inject_end=0; 
+#ifdef __aarch64__
+
+#else
         asm ("mov $inject_begin, %0 \n"
              : "=r" (inject_begin));
         asm ("mov $inject_end, %0 \n"
              : "=r" (inject_end));
+#endif        
         int inject_size = (inject_end - inject_begin);
         dprint("inject_range(%p - %p), size(%d)", inject_begin, inject_end, inject_size);
      

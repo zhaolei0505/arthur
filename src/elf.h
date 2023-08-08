@@ -172,12 +172,16 @@ typedef a8_uint64_t elf_greg64_t;
 #define ELF_PRARGSZ     (80)    /* Number of chars for args.  */
 
 /* Signal info.  */
+#ifdef __aarch64__
+// arm64 has the efl_siginfo definition in 'sys/procfs.h'.
+#else
 struct elf_siginfo
   {
     int si_signo;			/* Signal number.  */
     int si_code;			/* Extra code.  */
     int si_errno;			/* Errno.  */
   };
+#endif
 
 struct user_regs64_struct
 {

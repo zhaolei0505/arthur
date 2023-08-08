@@ -8,6 +8,7 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/utsname.h>
+#include <sys/user.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <assert.h>
