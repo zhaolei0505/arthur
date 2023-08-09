@@ -1,14 +1,16 @@
 #ifndef _ARTHUR_INC_H_
 #define _ARTHUR_INC_H_
 
+#if 0
 #include <sys/ptrace.h>
 #include <sys/types.h>
+#include <sys/user.h>
+#include <sys/procfs.h>
 #include <sys/wait.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/utsname.h>
-#include <sys/user.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <assert.h>
@@ -24,6 +26,10 @@
 #include <memory.h>
 #include <dirent.h>
 #include <unistd.h>
+#endif
+
+#include <assert.h>
+#include <string.h>
 
 // version
 #ifndef GIT_VERSION

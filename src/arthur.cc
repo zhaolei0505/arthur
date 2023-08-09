@@ -143,13 +143,13 @@ int main(int argc, char *argv[])
         dump.takememspace();
         switch (cfg.mode) {
             case 0: 
-                return dump.forkcore(fout, 0);
+                //return dump.forkcore(fout, 0);
             case 1: 
                 return dump.generate(fout);
             case 2: 
-                return dump.forkcore(fout, 1);
+                //return dump.forkcore(fout, 1);
             case 3:
-                return dump.monitor(fout);
+                //return dump.monitor(fout);
             default: 
                 help();
                 exit(1);
@@ -161,6 +161,7 @@ int main(int argc, char *argv[])
         return dump.decompress(cfg.metafile, cfg.output);
     }
 
+    // merge
     if (cfg.op == ARTHUR_OP_MERGE) {
          
     }

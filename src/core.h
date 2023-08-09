@@ -73,10 +73,12 @@ struct ThreadData {
     uint32_t _pid;
     uint32_t _attached:1;
 
-    elf_gregset64_t _regs;       // Generic Registers 
-    elf_fpregset64_t _fpregs;    // FP Registers
-    siginfo_t _siginfo;          // SigInfo 
-    elf_x86xstatereg _xstatereg; // X86_XSTATE
+    elf_gregset64_t     _regs;      // Generic Registers 
+    elf_fpregset64_t    _fpregs;    // FP Registers
+    siginfo_t           _siginfo;   // SigInfo 
+#ifdef __x86_64__    
+    elf_x86xstatereg    _xstatereg; // X86_XSTATE
+#endif
     ProcFile *_stat;
     
     ProcStat *_d_stat;
@@ -123,6 +125,7 @@ public:
     int fill_fpregset(const ThreadData& proc);
     int fill_siginfo(const ThreadData& proc);
     int fill_x86_xstate(const ThreadData& proc);
+    int fill_arm_sve(const ThreadData& proc);
     
     char *allocate(size_t payload_size);
     template <class T>

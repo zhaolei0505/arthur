@@ -1,25 +1,22 @@
 /* Arthur coredump implementation.
  */
 
-#include <sys/ptrace.h>
-#include <sys/signal.h>
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <assert.h>
+#include <sys/ptrace.h> // PTRACE_XXX
+#include <sys/signal.h> // siginfo_t
+#include <sys/types.h>  // size_t, second_t ...
+#include <sys/wait.h>   // waitpid
+#include <sys/mman.h>   // mmap
+#include <sys/stat.h>   // fstat
+#include <sys/utsname.h>// uname 
+#include <sys/uio.h>    // pread/pwrite
 #include <stdio.h>
-#include <getopt.h>
 #include <stdlib.h>
-#include <fstream>
-#include <sys/uio.h>
-#include <assert.h>
-#include <fcntl.h>
-#include <dlfcn.h>
+#include <unistd.h>
 #include <memory.h>
-#include <dirent.h>
+#include <assert.h>
+#include <fcntl.h>      // open
+#include <dlfcn.h>      // dlsym
+#include <dirent.h>     // readdir
 
 #include <sstream>
 #include <iterator>
@@ -39,7 +36,20 @@ extern "C" {
 #ifdef __aarch64__
 static __used__ void inject_fork(void) 
 {
-    // TBD: support aarch64
+    asm(
+    "inject_begin: \n"
+        "mov x8, #57 \n"        // SYS_fork
+        "svc #0 \n"
+        "cmp x0, #0 \n"
+        "beq inject_child \n"
+        "ret \n"
+    "inject_child: \n"
+        "brk #0 \n"             // generate a core by SIGTRACE
+        "mov x8, #93 \n"        // exit(0)
+        "mov x0, #0 \n"
+        "svc #0 \n"
+    "inject_end: \n"
+    );
 }
 #else
 static __used__ void inject_fork(void) 
@@ -156,7 +166,7 @@ uint64_t get_remote_func_address(pid_t pid,const char *so_path, char *func_name)
 
 /* pt_ functions, for ptrace_ calls.
  */
-int pt_wait(pid_t pid)
+static inline int pt_wait(pid_t pid)
 {
     int rc, status;
     rc = waitpid(pid, &status, WUNTRACED);
@@ -165,7 +175,7 @@ int pt_wait(pid_t pid)
     return status;
 }
 
-int pt_detach(pid_t pid)
+static inline int pt_detach(pid_t pid)
 {
     int rc;
 
@@ -176,36 +186,32 @@ int pt_detach(pid_t pid)
     return rc;
 }
 
-int pt_getregs(pid_t pid, user_regs64_struct *pregs)
+static inline int pt_getregs(pid_t pid, user_regs64_struct *pregs)
 {
     int rc;
 #ifdef __aarch64__
-    rc = ptrace(PTRACE_GETREGSET, pid, NULL, pregs);
+    //printf("sizeof(user_pt_regs)%d\n" , sizeof(struct user_pt_regs));
+    struct iovec iov;
+    iov.iov_base = pregs;
+    iov.iov_len = sizeof(user_regs64_struct);
+    rc = ptrace(PTRACE_GETREGSET, pid, NT_PRSTATUS, &iov);
 #else
     rc = ptrace(PTRACE_GETREGS, pid, NULL, pregs);
 #endif
 
     assert(rc == 0);
 
-#if DEBUG 
-    printf("RIP %16lx FLG %16lx\n", pregs->rip, pregs->eflags);
-    printf("RSP %16lx RBP %16lx\n", pregs->rsp, pregs->rbp);
-    printf("RAX %16lx RBX %16lx\n", pregs->rax, pregs->rbx);
-    printf("RCX %16lx RDX %16lx\n", pregs->rcx, pregs->rdx);
-    printf("RSI %16lx RDI %16lx\n", pregs->rsi, pregs->rdi);
-    printf("R8  %16lx R9  %16lx\n", pregs->r8, pregs->r9);
-    printf("R10 %16lx R11 %16lx\n", pregs->r10, pregs->r11);
-    printf("R12 %16lx R13 %16lx\n", pregs->r12, pregs->r13);
-    printf("R14 %16lx R15 %16lx\n", pregs->r14, pregs->r15);
-    printf("CS %4lx SS %4lx DS %4lx ES %4lx FS %4lx GS %4lx\n", 
-            pregs->cs, pregs->ss, pregs->ds, pregs->es, pregs->fs, pregs->gs);
-    printf("ORAX %16lx, BASE(FS %16lx, GS %16lx)\n", 
-            pregs->orig_rax, pregs->fs_base, pregs->gs_base);
-#endif
     return rc;
 }
 
-int pt_call(pid_t pid, user_regs64_struct *oregs, uint64_t func, int argc, uint64_t argv[])
+#ifdef __aarch64__
+static inline int pt_call(pid_t pid, user_regs64_struct *oregs, uint64_t func, int argc, uint64_t argv[])
+{
+    return 0;
+}
+
+#else
+static inline int pt_call(pid_t pid, user_regs64_struct *oregs, uint64_t func, int argc, uint64_t argv[])
 {
     int rc, status = 0;
     user_regs64_struct regs;
@@ -284,8 +290,9 @@ int pt_call(pid_t pid, user_regs64_struct *oregs, uint64_t func, int argc, uint6
 
     return rc;
 }
+#endif
 
-int pt_setregs(pid_t pid, user_regs64_struct *pregs)
+static inline int pt_setregs(pid_t pid, user_regs64_struct *pregs)
 {
     int rc;
 
@@ -299,7 +306,7 @@ int pt_setregs(pid_t pid, user_regs64_struct *pregs)
     return rc;
 }
 
-int pt_write(pid_t pid, uint64_t dest, void *src, size_t len)
+static inline int pt_write(pid_t pid, uint64_t dest, void *src, size_t len)
 {
     int rc, status = 0;
     char pbuf[128];
@@ -325,7 +332,7 @@ int pt_write(pid_t pid, uint64_t dest, void *src, size_t len)
     return rc;
 }
 
-int pt_attach(pid_t pid)
+static inline int pt_attach(pid_t pid)
 {
     int rc;
 
@@ -336,7 +343,7 @@ int pt_attach(pid_t pid)
     return rc;
 }
 
-int pt_int(pid_t pid)
+static inline int pt_int(pid_t pid)
 {
     int rc;
     rc = ptrace(PTRACE_INTERRUPT, pid, NULL, NULL);
@@ -346,7 +353,7 @@ int pt_int(pid_t pid)
     return rc;
 }
 
-int pt_cont(pid_t pid) {
+static inline int pt_cont(pid_t pid) {
     int rc;
     rc = ptrace(PTRACE_CONT, pid, NULL, NULL);
     assert(rc == 0);
@@ -354,7 +361,7 @@ int pt_cont(pid_t pid) {
     return rc;
 }
 
-int pt_monitor(pid_t pid) {
+static inline int pt_monitor(pid_t pid) {
     int rc;
     rc = ptrace(PTRACE_SEIZE, pid, NULL, NULL);
     assert(rc == 0);
@@ -574,6 +581,7 @@ int Note::fill_siginfo(const ThreadData& thr)
     return 0;
 }
 
+#ifdef __x86_64__
 // NT_X86_XSTATE
 int Note::fill_x86_xstate(const ThreadData& thr)
 {
@@ -581,6 +589,14 @@ int Note::fill_x86_xstate(const ThreadData& thr)
     memcpy(p, &thr._xstatereg, 2688);
     return 0;
 }
+#endif
+
+#ifdef __aarch64__
+int Note::fill_arm_sve(const ThreadData& thr)
+{
+    // TBD: support arm sve registsers
+}
+#endif
 
 Coredump::Coredump(pid_t pid) 
     : _pid(pid)
@@ -592,6 +608,7 @@ Coredump::Coredump(pid_t pid)
 int Coredump::WriteFileHeader(Lz4Stream& out)
 {
     AcoreHeader hdr;
+
     out.WriteRaw((const char*)&hdr, sizeof(hdr));
 
     return 0;
@@ -669,11 +686,7 @@ int Coredump::WriteThreadMeta(Lz4Stream& out, pid_t pid, bool is_main) {
     out.Write((const char*)&pid, sizeof(i._pid));
 
     // get Grnerate Registers
-#ifdef __aarch64__
-    rc = ptrace(PTRACE_GETREGSET, pid, 0, buf);
-#else
-    rc = ptrace(PTRACE_GETREGS, pid, 0, buf);
-#endif    
+    rc = pt_getregs(pid, (user_regs64_struct*)buf);
     assert(rc == 0);
     out.Write(buf, sizeof(i._regs));
 
@@ -692,11 +705,13 @@ int Coredump::WriteThreadMeta(Lz4Stream& out, pid_t pid, bool is_main) {
     assert(rc == 0);
     out.Write(buf, sizeof(i._siginfo));
 
+#ifdef __x86_64__
     // get NT_X86_XSTATE     
     struct iovec iovec = { buf, sizeof(i._xstatereg) };
     rc = ptrace(PTRACE_GETREGSET, pid, NT_X86_XSTATE, &iovec);
     assert(rc == 0); 
     out.Write(buf, sizeof(i._xstatereg));
+#endif
 
     out.Flush();
     // read /proc/<pid>/stat
@@ -766,7 +781,10 @@ int Coredump::ReadMeta(Lz4Stream& in)
         buf->Read((char*)&td._regs, sizeof(td._regs));
         buf->Read((char*)&td._fpregs, sizeof(td._fpregs));
         buf->Read((char*)&td._siginfo, sizeof(td._siginfo));
+
+#ifdef __x86_64__
         buf->Read((char*)&td._xstatereg, sizeof(td._xstatereg));
+#endif
 
         td._stat = in.GetFile();
         _process._threads.push_back(td);
@@ -825,7 +843,8 @@ int Coredump::WriteLoads(Lz4Stream& out, pid_t pid, ProcMaps& maps)
         // write memory dump
         size_t size = 0;
         for (uint64_t addr = r.start_addr; addr < end_addr; addr += sizeof(buf)) {
-            ssize_t len = pread(fd, buf, sizeof(buf), addr);
+            int req = MIN((end_addr - addr), sizeof(buf));
+            ssize_t len = pread(fd, buf, req, addr);
             if (len < 0) {
                 warn("pread mem(%p) failed(%d).", addr, errno);
                 break;
@@ -844,6 +863,7 @@ int Coredump::WriteLoads(Lz4Stream& out, pid_t pid, ProcMaps& maps)
  
         // update file size in phdr
         ph.p_filesz = size;
+        //printf("%lx : %ld %ld\n", ph.p_vaddr, ph.p_memsz, ph.p_filesz);
         _phdrs.emplace_back(ph);
 
         // update memory size
@@ -869,7 +889,12 @@ int Coredump::WriteElfHeader(Lz4Stream& out)
 {
     Elf64_Ehdr ehdr;
     ehdr.e_phnum = _phdrs.size();
-    
+#ifdef __aarch64__
+    ehdr.e_machine = EM_AARCH64; 
+#else
+    ehdr.e_machine = EM_X86_64; 
+#endif
+
     out.SetBlock(BLOCK_TYPE_ELF);
     out.Write((const char*)&ehdr, sizeof(ehdr));
    
@@ -885,7 +910,10 @@ int Coredump::WriteElfHeader(FILE* fout)
     int rc = 0;
     ssize_t len;
     Elf64_Ehdr ehdr;
-    ehdr.e_phnum = _ehdr.e_phnum;
+   
+    ehdr.e_machine = _ehdr.e_machine;
+    ehdr.e_phnum = _phdrs.size();
+
     len = fwrite(&ehdr, 1, sizeof(ehdr), fout);
     assert(len == sizeof(ehdr));
     rc += len;
@@ -1006,6 +1034,7 @@ int Coredump::GenerateNotes()
         nt->fill_prstatus(i);
         _notes.push_back(nt);
 
+#ifdef __x86_64__
         // NT_FPREGSET (floating point registers)
         nt = new Note(NT_FPREGSET);
         nt->fill_fpregset(i);
@@ -1015,6 +1044,7 @@ int Coredump::GenerateNotes()
         nt = new Note(NT_X86_XSTATE);
         nt->fill_x86_xstate(i);
         _notes.push_back(nt);
+#endif
 
         // NT_SIGINFO (siginfo_t data)
         nt = new Note(NT_SIGINFO);
@@ -1103,6 +1133,7 @@ int Coredump::generate(const char *corefile)
     return 0;
 }
 
+#if 0
 int Coredump::forkcore(const char *corefile, bool sys_core)
 {
     /* forkcore using a forked process for large memory dump, 
@@ -1574,6 +1605,7 @@ int Coredump::monitor(const char* corefile)
     out.Close();
     return 0;
 }
+#endif
 
 int Coredump::decompress(const char* in_file, const char* out_core)
 {

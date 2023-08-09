@@ -1,5 +1,5 @@
 CC := g++
-CCFLAGS += -std=c++11 -Wall -g -O2
+CCFLAGS += -std=c++11 -Wall -g -O0
 
 ARCH=$(shell uname -m)
 ifeq ($(ARCH), aarch64)

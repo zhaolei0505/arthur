@@ -162,26 +162,51 @@ struct Elf64_Ehdr {
     }
 };
 
-
 /* Core specifications */
-
 /* Unsigned 64-bit integer aligned to 8 bytes.  */
 typedef uint64_t __attribute__ ((__aligned__ (8))) a8_uint64_t;
 typedef a8_uint64_t elf_greg64_t;
 
+#ifdef __aarch64__
+
+struct user_regs64_struct
+{
+  unsigned long long regs[31];
+  unsigned long long sp;
+  unsigned long long pc;
+  unsigned long long pstate;
+#define rax regs[0]
+#define rsp sp
+#define rip pc
+};
+
+struct user_fpsimd64_struct
+{
+  __uint128_t  vregs[32];
+  unsigned int fpsr;
+  unsigned int fpcr;
+};
+
+#define ELF_NGREG64 (sizeof (struct user_regs64_struct) / sizeof(elf_greg64_t))
+typedef elf_greg64_t elf_gregset64_t[ELF_NGREG64];
+typedef user_fpsimd64_struct elf_fpregset64_t;
+typedef elf_prpsinfo elf_prpsinfo64;
+typedef elf_prstatus elf_prstatus64;
+
+static_assert(sizeof(elf_prstatus64)==0x188, "invalid prstatus");
+static_assert(sizeof(elf_prpsinfo64)==0x88, "invalid prpsinfo");
+static_assert(sizeof(siginfo_t)==0x80, "invalid prpsinfo");
+
+#else 
 #define ELF_PRARGSZ     (80)    /* Number of chars for args.  */
 
 /* Signal info.  */
-#ifdef __aarch64__
-// arm64 has the efl_siginfo definition in 'sys/procfs.h'.
-#else
 struct elf_siginfo
   {
     int si_signo;			/* Signal number.  */
     int si_code;			/* Extra code.  */
     int si_errno;			/* Errno.  */
   };
-#endif
 
 struct user_regs64_struct
 {
@@ -212,6 +237,12 @@ struct user_regs64_struct
     a8_uint64_t es;
     a8_uint64_t fs;
     a8_uint64_t gs;
+
+#define rc
+#define arg0
+#define arg1
+#define arg2
+#define arg3
 };
 
 struct user_fpregs64_struct
@@ -281,8 +312,9 @@ struct elf_prpsinfo64
 
 static_assert(sizeof(elf_prpsinfo64)==0x88, "invalid prpsinfo");
 
+// defined in signal.h
 static_assert(sizeof(siginfo_t)==0x80, "invalid prpsinfo");
 
-
+#endif // x86_64
 
 #endif // _ARTHUR_ELF_H_

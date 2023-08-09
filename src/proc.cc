@@ -5,6 +5,7 @@
 #include <iostream> 
 #include <sstream> 
 #include <cstdarg>
+#include <fcntl.h>
 
 #include "inc.h"
 #include "proc.h"
