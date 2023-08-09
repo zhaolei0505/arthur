@@ -5,6 +5,7 @@
 #define _ARTHUR_CORE_H_
 
 #include <sys/ptrace.h>
+#include <sys/time.h>
 #include <vector>
 #include <map>
 #include <sstream>
