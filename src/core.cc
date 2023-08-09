@@ -36,6 +36,7 @@ extern "C" {
 #ifdef __aarch64__
 static __used__ void inject_fork(void) 
 {
+    // aarch64 doesn't have a fork syscall, needs clone flags for fork(). 
     asm(
     "inject_begin: \n"
         "mov x0, #17 \n"        // SIGCHLD
@@ -1201,10 +1202,10 @@ int Coredump::forkcore(const char *corefile, bool sys_core)
     const char *so_path = "libc";
     uint64_t r_mmap = get_remote_func_address(_pid, so_path, "mmap");
     uint64_t r_munmap = get_remote_func_address(_pid, so_path, "munmap");
-    uint64_t r_fork = get_remote_func_address(_pid, so_path, "fork");
+    //uint64_t r_fork = get_remote_func_address(_pid, so_path, "fork");
     uint64_t r_waitpid = get_remote_func_address(_pid, so_path, "waitpid");
     info("remote mmap at %p", r_mmap);
-    info("remote fork at %p", r_fork);
+    //info("remote fork at %p", r_fork);
     info("remote waitpid at %p", r_waitpid);
 
     // save the program regs
@@ -1228,15 +1229,11 @@ int Coredump::forkcore(const char *corefile, bool sys_core)
     {
         char *inject_begin=0, *inject_end=0; 
 #ifdef __aarch64__
-        asm ("adr %0, inject_begin\n"
-             : "=r" (inject_begin));
-        asm ("adr %0, inject_end\n"
-             : "=r" (inject_end));
+        asm ("adr %0, inject_begin\n" : "=r" (inject_begin));
+        asm ("adr %0, inject_end\n" : "=r" (inject_end));
 #else
-        asm ("mov $inject_begin, %0 \n"
-             : "=r" (inject_begin));
-        asm ("mov $inject_end, %0 \n"
-             : "=r" (inject_end));
+        asm ("mov $inject_begin, %0 \n" : "=r" (inject_begin));
+        asm ("mov $inject_end, %0 \n" : "=r" (inject_end));
 #endif
         int inject_size = (inject_end - inject_begin);
         dprint("inject_range(%p - %p), size(%d)", inject_begin, inject_end, inject_size);
@@ -1292,7 +1289,6 @@ int Coredump::forkcore(const char *corefile, bool sys_core)
     return 0;
 }
 
-#if 0
 /* forkcore_m() generate corefile in the same way as forkcore()
  * except: 
  *    1. using PTRACE_INTERRUPT to stop tracee
@@ -1379,8 +1375,8 @@ int Coredump::forkcore_m(const char *corefile, bool sys_core)
     {
         uint64_t gv[6] = {0, 0x1000, PROT_READ|PROT_WRITE|PROT_EXEC, MAP_ANONYMOUS|MAP_PRIVATE, 0, 0};
         pt_call(_pid, &regs, r_mmap, 6, gv);
-        info("mmap = %p", regs.rax);
-        inject_page = regs.rax;
+        info("mmap = %p", regs.s_rc);
+        inject_page = regs.s_rc;
     }
     pt_getregs(_pid, &regs);
 
@@ -1388,27 +1384,26 @@ int Coredump::forkcore_m(const char *corefile, bool sys_core)
     {
         char *inject_begin=0, *inject_end=0; 
 #ifdef __aarch64__
-
+        asm ("adr %0, inject_begin\n" : "=r" (inject_begin));
+        asm ("adr %0, inject_end\n" : "=r" (inject_end));
 #else
-        asm ("mov $inject_begin, %0 \n"
-             : "=r" (inject_begin));
-        asm ("mov $inject_end, %0 \n"
-             : "=r" (inject_end));
+        asm ("mov $inject_begin, %0 \n" : "=r" (inject_begin));
+        asm ("mov $inject_end, %0 \n" : "=r" (inject_end));
 #endif        
         int inject_size = (inject_end - inject_begin);
         dprint("inject_range(%p - %p), size(%d)", inject_begin, inject_end, inject_size);
      
         pt_write(_pid, inject_page, (void *)inject_fork, inject_size);
         pt_call(_pid, &regs, inject_page, 0, NULL);
-        info("child_pid = %d", regs.rax);
-        _core_pid = regs.rax;
+        info("child_pid = %d", regs.s_rc);
+        _core_pid = regs.s_rc;
     }
 
     // munmap injected page.
     {
         uint64_t gv[2] = {inject_page, 0x1000};
         pt_call(_pid, &regs, r_munmap, 2, gv);
-        info("munmap = %d", (int)regs.rax);
+        info("munmap = %d", (int)regs.s_rc);
     }
 
     // restore program regs
@@ -1468,7 +1463,7 @@ int Coredump::forkcore_m(const char *corefile, bool sys_core)
     {
         uint64_t gv[3] = {(uint64_t)_core_pid, NULL, 0};
         pt_call(_pid, &regs, r_waitpid, 3, gv);
-        info("waitpid = %d", (int)regs.rax);
+        info("waitpid = %d", (int)regs.s_rc);
     }
     pt_setregs(_pid, &saved_regs);
     if(!WIFSTOPPED(s)) {
@@ -1610,7 +1605,6 @@ int Coredump::monitor(const char* corefile)
     out.Close();
     return 0;
 }
-#endif
 
 int Coredump::decompress(const char* in_file, const char* out_core)
 {

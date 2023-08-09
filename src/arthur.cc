@@ -147,9 +147,9 @@ int main(int argc, char *argv[])
             case 1: 
                 return dump.generate(fout);
             case 2: 
-                //return dump.forkcore(fout, 1);
+                return dump.forkcore(fout, 1);
             case 3:
-                //return dump.monitor(fout);
+                return dump.monitor(fout);
             default: 
                 help();
                 exit(1);
