@@ -143,7 +143,7 @@ int main(int argc, char *argv[])
         dump.takememspace();
         switch (cfg.mode) {
             case 0: 
-                //return dump.forkcore(fout, 0);
+                return dump.forkcore(fout, 0);
             case 1: 
                 return dump.generate(fout);
             case 2: 

@@ -38,7 +38,8 @@ static __used__ void inject_fork(void)
 {
     asm(
     "inject_begin: \n"
-        "mov x8, #57 \n"        // SYS_fork
+        "mov x8, #220 \n"       // SYS_fork
+        "mov x0, #0 \n"
         "svc #0 \n"
         "cmp x0, #0 \n"
         "beq inject_child \n"
@@ -51,6 +52,7 @@ static __used__ void inject_fork(void)
     "inject_end: \n"
     );
 }
+
 #else
 static __used__ void inject_fork(void) 
 {
@@ -186,11 +188,11 @@ static inline int pt_detach(pid_t pid)
     return rc;
 }
 
+// read all general purpose registers
 static inline int pt_getregs(pid_t pid, user_regs64_struct *pregs)
 {
     int rc;
 #ifdef __aarch64__
-    //printf("sizeof(user_pt_regs)%d\n" , sizeof(struct user_pt_regs));
     struct iovec iov;
     iov.iov_base = pregs;
     iov.iov_len = sizeof(user_regs64_struct);
@@ -200,68 +202,80 @@ static inline int pt_getregs(pid_t pid, user_regs64_struct *pregs)
 #endif
 
     assert(rc == 0);
-
     return rc;
 }
 
-#ifdef __aarch64__
-static inline int pt_call(pid_t pid, user_regs64_struct *oregs, uint64_t func, int argc, uint64_t argv[])
+// write all general purpose registers
+static inline int pt_setregs(pid_t pid, user_regs64_struct *pregs)
 {
-    return 0;
+    int rc;
+
+#ifdef __aarch64__
+    struct iovec iov;
+    iov.iov_base = pregs;
+    iov.iov_len = sizeof(user_regs64_struct);
+    rc = ptrace(PTRACE_SETREGSET, pid, NT_PRSTATUS, &iov);
+#else
+    rc = ptrace(PTRACE_SETREGS, pid, NULL, pregs);
+#endif
+
+    assert(rc == 0);
+    return rc;
 }
 
-#else
+/* the pt_call put a call frame with return address of ZERO on top of the current thread,
+ * and wait the SIGSEGV ocur.
+ */
 static inline int pt_call(pid_t pid, user_regs64_struct *oregs, uint64_t func, int argc, uint64_t argv[])
 {
     int rc, status = 0;
     user_regs64_struct regs;
     assert(argc <= 6);
 
-#ifdef __aarch64__
-    rc = ptrace(PTRACE_GETREGSET, pid, NULL, &regs);
-#else
-    rc = ptrace(PTRACE_GETREGS, pid, NULL, &regs);
-#endif
+    // get origin regs
+    rc = pt_getregs(pid, &regs);
     assert(rc == 0);
 
     // simulate call instruction
-    regs.rsp -= 8;
+    regs.s_sp -= 32;
+
+#ifdef __aarch64__
+    regs.regs[30] = 0;
+#else
+    regs.s_sp -= 8;
     uint64_t zero = 0;
-    rc = ptrace(PTRACE_POKEDATA, pid, regs.rsp, 0);
+    rc = ptrace(PTRACE_POKEDATA, pid, regs.s_sp, 0);
     assert(rc == 0);
-   
+#endif
+
     // makeup function call and arguments
-    regs.rip = func;
+    regs.s_pc = func;
     for (int i=0; i<argc; i++) {
         switch (i) {
             case 0:
-                regs.rdi = argv[0];
+                regs.s_ag0 = argv[0];
                 break;
             case 1:
-                regs.rsi = argv[1];
+                regs.s_ag1 = argv[1];
                 break; 
             case 2:
-                regs.rdx = argv[2];
+                regs.s_ag2 = argv[2];
                 break; 
             case 3:
-                regs.rcx = argv[3];
+                regs.s_ag3 = argv[3];
                 break; 
             case 4:
-                regs.r8 = argv[4];
+                regs.s_ag4 = argv[4];
                 break; 
             case 5:
-                regs.r9 = argv[5];
+                regs.s_ag5 = argv[5];
                 break;
             default:
                assert(0); 
         }
     }
-  
-#ifdef __aarch64__ 
-    rc = ptrace(PTRACE_SETREGSET, pid, NULL, &regs);
-#else
-    rc = ptrace(PTRACE_SETREGS, pid, NULL, &regs);
-#endif
+ 
+    rc = pt_setregs(pid, &regs);
     assert(rc == 0);
 
     // wait for a SIGSEGV
@@ -274,9 +288,9 @@ static inline int pt_call(pid_t pid, user_regs64_struct *oregs, uint64_t func, i
                 unsigned long msg;
                 rc = ptrace(PTRACE_GETEVENTMSG, pid, 0, &msg);
                 assert(rc == 0);
-                dprint("child pid = %lu", msg);
+                info("child pid = %lu", msg);
             } 
-            dprint("statux = %x", status);
+            info("statux = %x", status);
         }
         rc = ptrace(PTRACE_CONT, pid, NULL, NULL);
         assert(rc >= 0);
@@ -288,21 +302,6 @@ static inline int pt_call(pid_t pid, user_regs64_struct *oregs, uint64_t func, i
         pt_getregs(pid, oregs);
     }
 
-    return rc;
-}
-#endif
-
-static inline int pt_setregs(pid_t pid, user_regs64_struct *pregs)
-{
-    int rc;
-
-#ifdef __aarch64__
-    rc = ptrace(PTRACE_SETREGSET, pid, NULL, pregs);
-#else
-    rc = ptrace(PTRACE_SETREGS, pid, NULL, pregs);
-#endif
-
-    assert(rc == 0);
     return rc;
 }
 
@@ -1133,7 +1132,6 @@ int Coredump::generate(const char *corefile)
     return 0;
 }
 
-#if 0
 int Coredump::forkcore(const char *corefile, bool sys_core)
 {
     /* forkcore using a forked process for large memory dump, 
@@ -1192,7 +1190,11 @@ int Coredump::forkcore(const char *corefile, bool sys_core)
  
     // we've injected an 'int 3' in child process, that generates a corefile by kernel. 
     if (!sys_core) {
+#ifdef __aarch64__
+        rc = ptrace(PTRACE_SETOPTIONS, _pid, 0, PTRACE_O_TRACECLONE);
+#else
         rc = ptrace(PTRACE_SETOPTIONS, _pid, 0, PTRACE_O_TRACEFORK);
+#endif
         assert(rc == 0);
     }
 
@@ -1204,6 +1206,7 @@ int Coredump::forkcore(const char *corefile, bool sys_core)
     uint64_t r_waitpid = get_remote_func_address(_pid, so_path, "waitpid");
     info("remote mmap at %p", r_mmap);
     info("remote fork at %p", r_fork);
+    info("remote waitpid at %p", r_waitpid);
 
     // save the program regs
     user_regs64_struct saved_regs;
@@ -1211,12 +1214,14 @@ int Coredump::forkcore(const char *corefile, bool sys_core)
 
     // get a page for shellcode
     user_regs64_struct regs;
+
     uint64_t inject_page = 0;
     {
+        //uint64_t gv[6] = {0, 0x1000, PROT_READ|PROT_WRITE|PROT_EXEC, MAP_ANONYMOUS|MAP_PRIVATE, 0, 0};
         uint64_t gv[6] = {0, 0x1000, PROT_READ|PROT_WRITE|PROT_EXEC, MAP_ANONYMOUS|MAP_PRIVATE, 0, 0};
         pt_call(_pid, &regs, r_mmap, 6, gv);
-        info("mmap = %p", regs.rax);
-        inject_page = regs.rax;
+        info("mmap = %p", regs.s_rc);
+        inject_page = regs.s_rc;
     }
     pt_getregs(_pid, &regs);
 
@@ -1224,8 +1229,11 @@ int Coredump::forkcore(const char *corefile, bool sys_core)
     {
         char *inject_begin=0, *inject_end=0; 
 #ifdef __aarch64__
-
-#else        
+        asm ("adr %0, inject_begin\n"
+             : "=r" (inject_begin));
+        asm ("adr %0, inject_end\n"
+             : "=r" (inject_end));
+#else
         asm ("mov $inject_begin, %0 \n"
              : "=r" (inject_begin));
         asm ("mov $inject_end, %0 \n"
@@ -1236,15 +1244,15 @@ int Coredump::forkcore(const char *corefile, bool sys_core)
      
         pt_write(_pid, inject_page, (void *)inject_fork, inject_size);
         pt_call(_pid, &regs, inject_page, 0, NULL);
-        info("child_pid = %d", regs.rax);
-        _core_pid = regs.rax;
+        info("child_pid = %d", regs.s_rc);
+        _core_pid = regs.s_rc;
     }
 
     // munmap injected page.
     {
         uint64_t gv[2] = {inject_page, 0x1000};
         pt_call(_pid, &regs, r_munmap, 2, gv);
-        info("munmap = %d", (int)regs.rax);
+        info("munmap = %d", (int)regs.s_rc);
     }
 
     // restore program 
@@ -1258,12 +1266,11 @@ int Coredump::forkcore(const char *corefile, bool sys_core)
 
     // TBD: dump memory regions
     if (!sys_core) {
+        printf("write fork pid.\n");
         // write acore
-        {
-            WriteLoads(out, _core_pid, maps);
-            WriteElfHeader(out);
-            WriteTailMark(out);
-        }
+        WriteLoads(out, _core_pid, maps);
+        WriteElfHeader(out);
+        WriteTailMark(out);
     }
 
     // kill the forked process
@@ -1275,9 +1282,11 @@ int Coredump::forkcore(const char *corefile, bool sys_core)
     pt_attach(_pid);
     pt_getregs(_pid, &saved_regs);
     {
-        uint64_t gv[3] = {(uint64_t)_core_pid, NULL, 0};
+        printf("wstatue = %lx\n", saved_regs.s_sp - 8);
+        uint64_t gv[3] = { _core_pid, NULL, WNOHANG };
         pt_call(_pid, &regs, r_waitpid, 3, gv);
-        info("waitpid = %d", (int)regs.rax);
+        info("waitpid(%ld) = %d", _core_pid, (int)regs.s_rc);
+        user_regs64_struct::DebugPrint(&regs);
     }
     pt_setregs(_pid, &saved_regs);
     pt_detach(_pid);
@@ -1288,6 +1297,7 @@ int Coredump::forkcore(const char *corefile, bool sys_core)
     return 0;
 }
 
+#if 0
 /* forkcore_m() generate corefile in the same way as forkcore()
  * except: 
  *    1. using PTRACE_INTERRUPT to stop tracee

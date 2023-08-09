@@ -8,6 +8,8 @@
 #include <unistd.h>
 #include <stdint.h>
 #include <signal.h>
+#include <stdio.h>
+#include <string.h>
 #include "elf_defs.h"
 
 #define ALIGN_UP(addr, align) ((((uint64_t) (addr)) + ((align) - 1)) & ~((align) - 1))
@@ -175,9 +177,25 @@ struct user_regs64_struct
   unsigned long long sp;
   unsigned long long pc;
   unsigned long long pstate;
-#define rax regs[0]
-#define rsp sp
-#define rip pc
+
+#define s_pc    pc 
+#define s_sp    sp 
+#define s_fp    regs[29] 
+#define s_rc    regs[0]
+
+#define s_ag0   regs[0]
+#define s_ag1   regs[1]
+#define s_ag2   regs[2]
+#define s_ag3   regs[3]
+#define s_ag4   regs[4]
+#define s_ag5   regs[5]
+
+    static void DebugPrint(user_regs64_struct *r) {
+        for (int i=0; i<31; i++) 
+            printf("x%d = %llx (%llu)\n", i, r->regs[i], r->regs[i]);
+        printf("pc = %llx\n", r->pc);
+        printf("sp = %llx\n", r->sp);
+    }
 };
 
 struct user_fpsimd64_struct
@@ -238,11 +256,17 @@ struct user_regs64_struct
     a8_uint64_t fs;
     a8_uint64_t gs;
 
-#define rc
-#define arg0
-#define arg1
-#define arg2
-#define arg3
+#define s_pc    rip
+#define s_sp    rsp
+#define s_fp    rbp
+#define s_rc    rax
+
+#define s_ag0   rdi
+#define s_ag1   rsi
+#define s_ag2   rdx
+#define s_ag3   rcx
+#define s_ag4   r8
+#define s_ag5   r9
 };
 
 struct user_fpregs64_struct
