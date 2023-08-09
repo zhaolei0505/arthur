@@ -38,8 +38,13 @@ static __used__ void inject_fork(void)
 {
     asm(
     "inject_begin: \n"
-        "mov x8, #220 \n"       // SYS_fork
-        "mov x0, #0 \n"
+        "mov x0, #17 \n"        // SIGCHLD
+        "movk x0, #120, lsl #16 \n" // CLONE_CHILD_SETTID | CLONE_CHILD_CLEARTID
+        "mov x1, #0 \n"
+        "mov x2, #0 \n"
+        "mov x3, #0 \n"
+        "mov x4, #0 \n"
+        "mov x8, #220 \n"       // SYS_clone
         "svc #0 \n"
         "cmp x0, #0 \n"
         "beq inject_child \n"
@@ -237,8 +242,6 @@ static inline int pt_call(pid_t pid, user_regs64_struct *oregs, uint64_t func, i
     assert(rc == 0);
 
     // simulate call instruction
-    regs.s_sp -= 32;
-
 #ifdef __aarch64__
     regs.regs[30] = 0;
 #else
@@ -1190,11 +1193,7 @@ int Coredump::forkcore(const char *corefile, bool sys_core)
  
     // we've injected an 'int 3' in child process, that generates a corefile by kernel. 
     if (!sys_core) {
-#ifdef __aarch64__
-        rc = ptrace(PTRACE_SETOPTIONS, _pid, 0, PTRACE_O_TRACECLONE);
-#else
         rc = ptrace(PTRACE_SETOPTIONS, _pid, 0, PTRACE_O_TRACEFORK);
-#endif
         assert(rc == 0);
     }
 
@@ -1238,7 +1237,7 @@ int Coredump::forkcore(const char *corefile, bool sys_core)
              : "=r" (inject_begin));
         asm ("mov $inject_end, %0 \n"
              : "=r" (inject_end));
-#endif        
+#endif
         int inject_size = (inject_end - inject_begin);
         dprint("inject_range(%p - %p), size(%d)", inject_begin, inject_end, inject_size);
      
@@ -1264,9 +1263,7 @@ int Coredump::forkcore(const char *corefile, bool sys_core)
     }
     ts_pause.end();
 
-    // TBD: dump memory regions
     if (!sys_core) {
-        printf("write fork pid.\n");
         // write acore
         WriteLoads(out, _core_pid, maps);
         WriteElfHeader(out);
@@ -1282,11 +1279,9 @@ int Coredump::forkcore(const char *corefile, bool sys_core)
     pt_attach(_pid);
     pt_getregs(_pid, &saved_regs);
     {
-        printf("wstatue = %lx\n", saved_regs.s_sp - 8);
-        uint64_t gv[3] = { _core_pid, NULL, WNOHANG };
+        uint64_t gv[3] = { _core_pid, NULL, 0 };
         pt_call(_pid, &regs, r_waitpid, 3, gv);
         info("waitpid(%ld) = %d", _core_pid, (int)regs.s_rc);
-        user_regs64_struct::DebugPrint(&regs);
     }
     pt_setregs(_pid, &saved_regs);
     pt_detach(_pid);
