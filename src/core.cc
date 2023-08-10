@@ -247,7 +247,7 @@ static inline int pt_call(pid_t pid, user_regs64_struct *oregs, uint64_t func, i
     regs.regs[30] = 0;
 #else
     regs.s_sp -= 8;
-    uint64_t zero = 0;
+    //uint64_t zero = 0;
     rc = ptrace(PTRACE_POKEDATA, pid, regs.s_sp, 0);
     assert(rc == 0);
 #endif
@@ -1222,7 +1222,7 @@ int Coredump::forkcore(const char *corefile, bool sys_core)
         //uint64_t gv[6] = {0, 0x1000, PROT_READ|PROT_WRITE|PROT_EXEC, MAP_ANONYMOUS|MAP_PRIVATE, 0, 0};
         uint64_t gv[6] = {0, 0x1000, PROT_READ|PROT_WRITE|PROT_EXEC, MAP_ANONYMOUS|MAP_PRIVATE, 0, 0};
         pt_call(_pid, &regs, r_mmap, 6, gv);
-        info("mmap = %llx", regs.s_rc);
+        info("mmap = %lx", regs.s_rc);
         inject_page = regs.s_rc;
     }
     pt_getregs(_pid, &regs);
@@ -1377,7 +1377,7 @@ int Coredump::forkcore_m(const char *corefile, bool sys_core)
     {
         uint64_t gv[6] = {0, 0x1000, PROT_READ|PROT_WRITE|PROT_EXEC, MAP_ANONYMOUS|MAP_PRIVATE, 0, 0};
         pt_call(_pid, &regs, r_mmap, 6, gv);
-        info("mmap = %llx", regs.s_rc);
+        info("mmap = %lx", regs.s_rc);
         inject_page = regs.s_rc;
     }
     pt_getregs(_pid, &regs);

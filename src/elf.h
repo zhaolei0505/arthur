@@ -166,17 +166,18 @@ struct Elf64_Ehdr {
 
 /* Core specifications */
 /* Unsigned 64-bit integer aligned to 8 bytes.  */
-typedef uint64_t __attribute__ ((__aligned__ (8))) a8_uint64_t;
+//typedef uint64_t __attribute__ ((__aligned__ (8))) a8_uint64_t;
+typedef uint64_t a8_uint64_t;
 typedef a8_uint64_t elf_greg64_t;
 
 #ifdef __aarch64__
 
 struct user_regs64_struct
 {
-  unsigned long long regs[31];
-  unsigned long long sp;
-  unsigned long long pc;
-  unsigned long long pstate;
+  uint64_t regs[31];
+  uint64_t sp;
+  uint64_t pc;
+  uint64_t pstate;
 
 #define s_pc    pc 
 #define s_sp    sp 
