@@ -270,19 +270,19 @@ struct user_regs64_struct
 #define s_ag5   r9
 
     static void DebugPrint(user_regs64_struct *r) {
-        printf("RIP %16lx FLG %16lx\n", pregs->rip, pregs->eflags);
-        printf("RSP %16lx RBP %16lx\n", pregs->rsp, pregs->rbp);
-        printf("RAX %16lx RBX %16lx\n", pregs->rax, pregs->rbx);
-        printf("RCX %16lx RDX %16lx\n", pregs->rcx, pregs->rdx);
-        printf("RSI %16lx RDI %16lx\n", pregs->rsi, pregs->rdi);
-        printf("R8  %16lx R9  %16lx\n", pregs->r8, pregs->r9);
-        printf("R10 %16lx R11 %16lx\n", pregs->r10, pregs->r11);
-        printf("R12 %16lx R13 %16lx\n", pregs->r12, pregs->r13);
-        printf("R14 %16lx R15 %16lx\n", pregs->r14, pregs->r15);
+        printf("RIP %16lx FLG %16lx\n", r->rip, r->eflags);
+        printf("RSP %16lx RBP %16lx\n", r->rsp, r->rbp);
+        printf("RAX %16lx RBX %16lx\n", r->rax, r->rbx);
+        printf("RCX %16lx RDX %16lx\n", r->rcx, r->rdx);
+        printf("RSI %16lx RDI %16lx\n", r->rsi, r->rdi);
+        printf("R8  %16lx R9  %16lx\n", r->r8, r->r9);
+        printf("R10 %16lx R11 %16lx\n", r->r10, r->r11);
+        printf("R12 %16lx R13 %16lx\n", r->r12, r->r13);
+        printf("R14 %16lx R15 %16lx\n", r->r14, r->r15);
         printf("CS %4lx SS %4lx DS %4lx ES %4lx FS %4lx GS %4lx\n", 
-                pregs->cs, pregs->ss, pregs->ds, pregs->es, pregs->fs, pregs->gs);
+                r->cs, r->ss, r->ds, r->es, r->fs, r->gs);
         printf("ORAX %16lx, BASE(FS %16lx, GS %16lx)\n", 
-                pregs->orig_rax, pregs->fs_base, pregs->gs_base);
+                r->orig_rax, r->fs_base, r->gs_base);
     }
 };
 
