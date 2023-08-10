@@ -193,9 +193,9 @@ struct user_regs64_struct
 
     static void DebugPrint(user_regs64_struct *r) {
         for (int i=0; i<31; i++) 
-            printf("x%d = %llx (%llu)\n", i, r->regs[i], r->regs[i]);
-        printf("pc = %llx\n", r->pc);
-        printf("sp = %llx\n", r->sp);
+            printf("x%d = %lx (%lu)\n", i, r->regs[i], r->regs[i]);
+        printf("pc = %lx\n", r->pc);
+        printf("sp = %lx\n", r->sp);
     }
 };
 
@@ -268,6 +268,22 @@ struct user_regs64_struct
 #define s_ag3   rcx
 #define s_ag4   r8
 #define s_ag5   r9
+
+    static void DebugPrint(user_regs64_struct *r) {
+        printf("RIP %16lx FLG %16lx\n", pregs->rip, pregs->eflags);
+        printf("RSP %16lx RBP %16lx\n", pregs->rsp, pregs->rbp);
+        printf("RAX %16lx RBX %16lx\n", pregs->rax, pregs->rbx);
+        printf("RCX %16lx RDX %16lx\n", pregs->rcx, pregs->rdx);
+        printf("RSI %16lx RDI %16lx\n", pregs->rsi, pregs->rdi);
+        printf("R8  %16lx R9  %16lx\n", pregs->r8, pregs->r9);
+        printf("R10 %16lx R11 %16lx\n", pregs->r10, pregs->r11);
+        printf("R12 %16lx R13 %16lx\n", pregs->r12, pregs->r13);
+        printf("R14 %16lx R15 %16lx\n", pregs->r14, pregs->r15);
+        printf("CS %4lx SS %4lx DS %4lx ES %4lx FS %4lx GS %4lx\n", 
+                pregs->cs, pregs->ss, pregs->ds, pregs->es, pregs->fs, pregs->gs);
+        printf("ORAX %16lx, BASE(FS %16lx, GS %16lx)\n", 
+                pregs->orig_rax, pregs->fs_base, pregs->gs_base);
+    }
 };
 
 struct user_fpregs64_struct
