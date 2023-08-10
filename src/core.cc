@@ -89,7 +89,7 @@ void debugstr(std::string a)
         //std::string a = note.str();
         //unsigned char *ptr2 = (unsigned char*)&nh;
         unsigned char *ptr = (unsigned char*)a.c_str();
-        for (int i=0; i<a.size()+1; i++) {
+        for (size_t i=0; i<a.size()+1; i++) {
             printf(" %02x", ptr[i]);
             if ((i+1) % 16 == 0) printf("\n");
         }
@@ -176,8 +176,8 @@ uint64_t get_remote_func_address(pid_t pid,const char *so_path, char *func_name)
  */
 static inline int pt_wait(pid_t pid)
 {
-    int rc, status;
-    rc = waitpid(pid, &status, WUNTRACED);
+    int status;
+    waitpid(pid, &status, WUNTRACED);
     //assert (rc == pid);
     dprint("status = %x (%d, %d)", status, WIFSTOPPED(status), WSTOPSIG(status));
     return status;
@@ -1692,7 +1692,7 @@ int Coredump::test_compress(const char* in_file, const char* out_file)
     size_t data_size = 0, file_size = 0;
     char buf[4*1024];
     for (;;) {
-        int len = fread(buf, 1, sizeof(buf), fin);
+        ssize_t len = fread(buf, 1, sizeof(buf), fin);
         if (len <= 0) {
             error("read failed (%d)", len);
             break;
@@ -1743,8 +1743,8 @@ int Coredump::test_decompress(const char* in_file, const char* out_file)
             break;
         }
 
-        int len = fwrite(block->rBuf(), 1, block->Size(), fout);
-        if (len != block->Size()) {
+        ssize_t len = fwrite(block->rBuf(), 1, block->Size(), fout);
+        if (len != (int)block->Size()) {
             break;
         }
         file_size += len; 
@@ -1752,7 +1752,7 @@ int Coredump::test_decompress(const char* in_file, const char* out_file)
     fclose(fout);
     in.Close();
 
-    info("write %u bytes.", file_size);
+    info("write %lu bytes.", file_size);
     return 0;
 }
 

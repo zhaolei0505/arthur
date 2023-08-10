@@ -92,6 +92,7 @@ void _hexbuf(const char*, int);
 #endif
 
 // for path snprintf
+#undef PATH_MAX
 #define PATH_MAX    (128)
 #define PAGE_SIZE   (4096)
 

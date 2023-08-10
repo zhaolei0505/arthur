@@ -141,11 +141,11 @@ struct Elf64_Ehdr {
     uint16_t      e_shstrndx;
 
     Elf64_Ehdr() :
-        e_ident({ ELFMAG0, ELFMAG1, ELFMAG2, ELFMAG3,
-                  ELFCLASS64, ELFDATA2LSB, EV_CURRENT,
-                  ELFOSABI_LINUX, 0,
-                  0,0,0,0,0,0,0
-                }),
+        e_ident{ ELFMAG0, ELFMAG1, ELFMAG2, ELFMAG3,
+                 ELFCLASS64, ELFDATA2LSB, EV_CURRENT,
+                 ELFOSABI_LINUX, 0,
+                 0,0,0,0,0,0,0
+               },
         e_type(ET_CORE),
         e_machine(EM_X86_64),
         e_version(1),
