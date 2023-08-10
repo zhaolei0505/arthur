@@ -292,9 +292,9 @@ static inline int pt_call(pid_t pid, user_regs64_struct *oregs, uint64_t func, i
                 unsigned long msg;
                 rc = ptrace(PTRACE_GETEVENTMSG, pid, 0, &msg);
                 assert(rc == 0);
-                info("child pid = %lu", msg);
+                dprint("child pid = %lu", msg);
             } 
-            info("statux = %x", status);
+            dprint("statux = %x", status);
         }
         rc = ptrace(PTRACE_CONT, pid, NULL, NULL);
         assert(rc >= 0);
@@ -1280,7 +1280,7 @@ int Coredump::forkcore(const char *corefile, bool sys_core)
     {
         uint64_t gv[3] = { (uint64_t)_core_pid, (uint64_t)NULL, 0 };
         pt_call(_pid, &regs, r_waitpid, 3, gv);
-        info("waitpid(%d) = %d", _core_pid, (int)regs.s_rc);
+        info("waitpid = %d", (int)regs.s_rc);
     }
     pt_setregs(_pid, &saved_regs);
     pt_detach(_pid);
