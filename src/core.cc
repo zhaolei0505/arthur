@@ -160,7 +160,7 @@ uint64_t get_module_address(pid_t pid, const char* so_path)
 }
 
 // function for get function address
-uint64_t get_remote_func_address(pid_t pid,const char *so_path, char *func_name){
+static uint64_t get_remote_func_address(pid_t pid,const char *so_path, const char *func_name){
     // fix: support debian
     uint64_t l_addr = (uint64_t)dlsym(NULL, func_name); 
     assert(l_addr);
@@ -311,7 +311,7 @@ static inline int pt_call(pid_t pid, user_regs64_struct *oregs, uint64_t func, i
 
 static inline int pt_write(pid_t pid, uint64_t dest, void *src, size_t len)
 {
-    int rc, status = 0;
+    int rc;
     char pbuf[128];
     snprintf(pbuf, sizeof(pbuf), "/proc/%u/mem", pid);
     int fd = open(pbuf, O_RDWR);
@@ -380,7 +380,7 @@ int makeroom(FILE* fout, size_t n)
 {
     char zero[PAGE_SIZE] = {0};
 
-    int m = 0;
+    size_t m = 0;
     while (m < n) {
         size_t len = MIN(PAGE_SIZE, n-m);
         ssize_t rc = fwrite(zero, 1, len, fout);
@@ -390,7 +390,7 @@ int makeroom(FILE* fout, size_t n)
         m += rc;
     }
 
-    return m; 
+    return 0; 
 }
 
 int ProcessData::ParseAll()
@@ -423,9 +423,10 @@ int ProcessData::ParseAll()
         t._d_stat = new ProcStat(t._stat);
         assert(t._d_stat);
         t._d_stat->Parse();
-    } 
-}
+    }
 
+    return 0;
+}
 
 /* allocate a piece of NOTE memory, return the start of payload.
  */
@@ -595,9 +596,11 @@ int Note::fill_x86_xstate(const ThreadData& thr)
 #endif
 
 #ifdef __aarch64__
+// NT_SVE
 int Note::fill_arm_sve(const ThreadData& thr)
 {
     // TBD: support arm sve registsers
+    return -1; 
 }
 #endif
 
@@ -606,7 +609,6 @@ Coredump::Coredump(pid_t pid)
 {
 
 }
-
 
 int Coredump::WriteFileHeader(Lz4Stream& out)
 {
@@ -729,13 +731,13 @@ int Coredump::VerifyFileHeader(Lz4Stream& in)
     int rc;
     AcoreHeader hdr, good;
     rc = in.ReadRaw(hdr.magic, sizeof(hdr.magic));
-    if (memcmp(hdr.magic, good.magic, sizeof(hdr.magic))) {
+    if (rc != sizeof(hdr.magic) || memcmp(hdr.magic, good.magic, sizeof(hdr.magic))) {
         error("magic failed.");
         return -1;
     }
 
     rc = in.ReadRaw((char*)&hdr.version, sizeof(hdr.version));
-    if (hdr.version != 1) {
+    if (rc != sizeof(hdr.version) || hdr.version != 1) {
         error("we don't support the arthur version.");
         return -1;
     }
@@ -745,7 +747,6 @@ int Coredump::VerifyFileHeader(Lz4Stream& in)
 
 int Coredump::ReadMeta(Lz4Stream& in)
 {
-    int rc;
     Block *buf;
     BlockHeader hdr; 
 
@@ -755,7 +756,7 @@ int Coredump::ReadMeta(Lz4Stream& in)
     }
 
     // process data
-    int u;
+    int u = 0;
     int thread_num = 0;
     {
         buf->Read((char*)&u, sizeof(u));
@@ -849,7 +850,7 @@ int Coredump::WriteLoads(Lz4Stream& out, pid_t pid, ProcMaps& maps)
             int req = MIN((end_addr - addr), sizeof(buf));
             ssize_t len = pread(fd, buf, req, addr);
             if (len < 0) {
-                warn("pread mem(%p) failed(%d).", addr, errno);
+                warn("pread mem(%lx) failed(%d).", addr, errno);
                 break;
             }
             mem_size += len;
@@ -906,6 +907,7 @@ int Coredump::WriteElfHeader(Lz4Stream& out)
     }
 
     out.Flush(); 
+    return 0;
 }
 
 int Coredump::WriteElfHeader(FILE* fout)
@@ -977,7 +979,7 @@ int Coredump::ReadElfHeader(Lz4Stream& in)
 int Coredump::ReadLoads(Lz4Stream& in, FILE* fout)
 {
     int rc;
-    size_t file_size = 0;
+    //size_t file_size = 0;
     size_t loads_size = 0;
 
 #if 0
@@ -1001,14 +1003,14 @@ int Coredump::ReadLoads(Lz4Stream& in, FILE* fout)
         Block *block = in.ReadBlock(hdr);
         assert(block);
 
-        ssize_t len = fwrite(block->rBuf(), 1, block->Size(), fout);
+        size_t len = fwrite(block->rBuf(), 1, block->Size(), fout);
         assert(len == block->Size());
 
-        file_size += hdr.size;
+        //file_size += hdr.size;
         loads_size += block->Size();
     }
 
-    dprint("Readloads: file(%lu), data(%lu)", file_size, loads_size);
+    //dprint("Readloads: file(%lu), data(%lu)", file_size, loads_size);
     return loads_size;
 }
 
@@ -1204,9 +1206,9 @@ int Coredump::forkcore(const char *corefile, bool sys_core)
     uint64_t r_munmap = get_remote_func_address(_pid, so_path, "munmap");
     //uint64_t r_fork = get_remote_func_address(_pid, so_path, "fork");
     uint64_t r_waitpid = get_remote_func_address(_pid, so_path, "waitpid");
-    info("remote mmap at %p", r_mmap);
+    info("remote mmap at %lx", r_mmap);
     //info("remote fork at %p", r_fork);
-    info("remote waitpid at %p", r_waitpid);
+    info("remote waitpid at %lx", r_waitpid);
 
     // save the program regs
     user_regs64_struct saved_regs;
@@ -1220,7 +1222,7 @@ int Coredump::forkcore(const char *corefile, bool sys_core)
         //uint64_t gv[6] = {0, 0x1000, PROT_READ|PROT_WRITE|PROT_EXEC, MAP_ANONYMOUS|MAP_PRIVATE, 0, 0};
         uint64_t gv[6] = {0, 0x1000, PROT_READ|PROT_WRITE|PROT_EXEC, MAP_ANONYMOUS|MAP_PRIVATE, 0, 0};
         pt_call(_pid, &regs, r_mmap, 6, gv);
-        info("mmap = %p", regs.s_rc);
+        info("mmap = %llx", regs.s_rc);
         inject_page = regs.s_rc;
     }
     pt_getregs(_pid, &regs);
@@ -1240,7 +1242,7 @@ int Coredump::forkcore(const char *corefile, bool sys_core)
      
         pt_write(_pid, inject_page, (void *)inject_fork, inject_size);
         pt_call(_pid, &regs, inject_page, 0, NULL);
-        info("child_pid = %d", regs.s_rc);
+        info("child_pid = %d", (int)regs.s_rc);
         _core_pid = regs.s_rc;
     }
 
@@ -1276,9 +1278,9 @@ int Coredump::forkcore(const char *corefile, bool sys_core)
     pt_attach(_pid);
     pt_getregs(_pid, &saved_regs);
     {
-        uint64_t gv[3] = { _core_pid, NULL, 0 };
+        uint64_t gv[3] = { (uint64_t)_core_pid, (uint64_t)NULL, 0 };
         pt_call(_pid, &regs, r_waitpid, 3, gv);
-        info("waitpid(%ld) = %d", _core_pid, (int)regs.s_rc);
+        info("waitpid(%d) = %d", _core_pid, (int)regs.s_rc);
     }
     pt_setregs(_pid, &saved_regs);
     pt_detach(_pid);
@@ -1306,7 +1308,7 @@ int Coredump::forkcore_m(const char *corefile, bool sys_core)
      * the two parts should be merged by arthur merge command to generate the final corefile.
      */
 
-    int rc, status;
+    int rc;
     Lz4Stream out(Lz4Stream::LZ4_Compress);
     rc = out.Open(corefile);
     if (rc < 0) {
@@ -1360,10 +1362,10 @@ int Coredump::forkcore_m(const char *corefile, bool sys_core)
     const char *so_path = "libc";
     uint64_t r_mmap = get_remote_func_address(_pid, so_path, "mmap");
     uint64_t r_munmap = get_remote_func_address(_pid, so_path, "munmap");
-    uint64_t r_fork = get_remote_func_address(_pid, so_path, "fork");
+    //uint64_t r_fork = get_remote_func_address(_pid, so_path, "fork");
     uint64_t r_waitpid = get_remote_func_address(_pid, so_path, "waitpid");
-    info("remote mmap at %p", r_mmap);
-    info("remote fork at %p", r_fork);
+    info("remote mmap at %lx", r_mmap);
+    info("remote waitpid at %lx", r_waitpid);
 
     // save the program regs
     user_regs64_struct saved_regs;
@@ -1375,7 +1377,7 @@ int Coredump::forkcore_m(const char *corefile, bool sys_core)
     {
         uint64_t gv[6] = {0, 0x1000, PROT_READ|PROT_WRITE|PROT_EXEC, MAP_ANONYMOUS|MAP_PRIVATE, 0, 0};
         pt_call(_pid, &regs, r_mmap, 6, gv);
-        info("mmap = %p", regs.s_rc);
+        info("mmap = %llx", regs.s_rc);
         inject_page = regs.s_rc;
     }
     pt_getregs(_pid, &regs);
@@ -1395,7 +1397,7 @@ int Coredump::forkcore_m(const char *corefile, bool sys_core)
      
         pt_write(_pid, inject_page, (void *)inject_fork, inject_size);
         pt_call(_pid, &regs, inject_page, 0, NULL);
-        info("child_pid = %d", regs.s_rc);
+        info("child_pid = %d", (int)regs.s_rc);
         _core_pid = regs.s_rc;
     }
 
@@ -1461,7 +1463,7 @@ int Coredump::forkcore_m(const char *corefile, bool sys_core)
     }
     pt_getregs(_pid, &saved_regs);
     {
-        uint64_t gv[3] = {(uint64_t)_core_pid, NULL, 0};
+        uint64_t gv[3] = {(uint64_t)_core_pid, (uint64_t)NULL, 0};
         pt_call(_pid, &regs, r_waitpid, 3, gv);
         info("waitpid = %d", (int)regs.s_rc);
     }
@@ -1476,7 +1478,7 @@ int Coredump::forkcore_m(const char *corefile, bool sys_core)
 
     // clean pending signal generated above by tracee
     sigset_t mask;
-    siginfo_t sig_info;
+    //siginfo_t sig_info;
     sigaddset(&mask, SIGCHLD);
     sigwaitinfo(&mask, NULL);
 
@@ -1504,7 +1506,7 @@ int Coredump::monitor(const char* corefile)
     info("Launched in monitor mode");
 
     // block all signals
-    sigset_t mask, prev;
+    sigset_t mask;
     sigaddset(&mask, SIGCHLD); // signal from tracee
     sigaddset(&mask, SIGUSR1); // signal for generating corefile while monitor
     sigprocmask(SIG_BLOCK, &mask, NULL);
@@ -1520,7 +1522,7 @@ int Coredump::monitor(const char* corefile)
                 exit_sig = signal_forkcore;
                 break;
             } else { // relay signals to tracee
-                ptrace(PTRACE_CONT, _pid, NULL, (void*) signal_forkcore);
+                ptrace(PTRACE_CONT, _pid, NULL, (uintptr_t) signal_forkcore);
                 signal_forkcore = 0; // reset forkcore signal
                 continue;
             }
@@ -1538,7 +1540,7 @@ int Coredump::monitor(const char* corefile)
                     info("process %d exit voluntarily", _pid);
                 } else { // process exits on receving signal
                     info("%s: process %d exit voluntarily", strsignal(status), _pid);
-                    ptrace(PTRACE_DETACH, _pid, NULL, (void*) status);
+                    ptrace(PTRACE_DETACH, _pid, NULL, (uintptr_t) status);
                 }
                 return 0;
             } else if (status == SIGILL || status == SIGABRT || status == SIGSEGV) {
@@ -1546,7 +1548,7 @@ int Coredump::monitor(const char* corefile)
                 exit_sig = status;
                 break;
             } else { // relay signals to tracee
-                ptrace(PTRACE_CONT, _pid, NULL, (void*) status);
+                ptrace(PTRACE_CONT, _pid, NULL, (uintptr_t) status);
             }
             signal_forkcore = 0; // reset signal 
         } else { 
@@ -1599,7 +1601,7 @@ int Coredump::monitor(const char* corefile)
 
     for (pid_t& tid : _process._thrd_pid) {
         // cannot guarantee thread exit order, not to check ptrace rc
-        ptrace(PTRACE_DETACH, tid, NULL, (void *) exit_sig);
+        ptrace(PTRACE_DETACH, tid, NULL, (uintptr_t) exit_sig);
     }
     out.PrintStat();
     out.Close();
@@ -1692,13 +1694,13 @@ int Coredump::test_compress(const char* in_file, const char* out_file)
     size_t data_size = 0, file_size = 0;
     char buf[4*1024];
     for (;;) {
-        ssize_t len = fread(buf, 1, sizeof(buf), fin);
-        if (len <= 0) {
-            error("read failed (%d)", len);
+        size_t len = fread(buf, 1, sizeof(buf), fin);
+        if (len == 0) {
+            error("read failed (%ld)", len);
             break;
         } 
         
-        for (ssize_t i=0; i<len; i+= BLOCK_SIZE) {
+        for (size_t i=0; i<len; i+= BLOCK_SIZE) {
             size_t j = MIN(len - i, BLOCK_SIZE);
             int rc = out.Write((const char*)(buf+i), j);
             assert(rc > 0);

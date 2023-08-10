@@ -63,7 +63,7 @@ void help()
     "\n" 
     ;
 
-    printf(help);
+    puts(help);
 }
 
 int main(int argc, char *argv[])
